@@ -76,12 +76,16 @@ def add_hero_object() -> bpy.types.Object:
 
 def point(obj: bpy.types.Object, target: tuple[float, float, float]) -> None:
     from mathutils import Vector
+
     direction = Vector(target) - obj.location
     obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
 
 def create_camera(
-    name: str, location: tuple[float, float, float], target: tuple[float, float, float], lens: float = 50.0
+    name: str,
+    location: tuple[float, float, float],
+    target: tuple[float, float, float],
+    lens: float = 50.0,
 ) -> bpy.types.Object:
     camera_data = bpy.data.cameras.new(name=name)  # type: ignore
     camera_obj = bpy.data.objects.new(name, camera_data)  # type: ignore
@@ -125,9 +129,7 @@ def build_turntable_scene() -> None:
     for frame, rotation in keyframes:
         hero.rotation_euler = (0.0, 0.0, rotation)
         hero.keyframe_insert(data_path="rotation_euler", index=2, frame=frame)
-    create_camera(
-        "TurntableCam", (8.0, -8.0, 5.0), (0.0, 0.0, 1.0), lens=45.0
-    )
+    create_camera("TurntableCam", (8.0, -8.0, 5.0), (0.0, 0.0, 1.0), lens=45.0)
 
 
 def build_closeup_scene() -> None:
@@ -135,9 +137,7 @@ def build_closeup_scene() -> None:
     bpy.context.scene.frame_end = 48
     hero = add_hero_object()
     hero.location = (0.0, 0.0, 0.5)
-    camera = create_camera(
-        "CloseupCam", (1.5, -1.0, 1.5), (0.0, 0.0, 0.8), lens=75.0
-    )
+    camera = create_camera("CloseupCam", (1.5, -1.0, 1.5), (0.0, 0.0, 0.8), lens=75.0)
     camera.data.dof.use_dof = True
     camera.data.dof.focus_distance = 1.5
 
