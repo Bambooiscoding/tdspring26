@@ -8,11 +8,14 @@ This script uses typer to create a CLI tool that:
 
 from pathlib import Path
 from typing import Optional
+import tempfile
+import shutil
+import subprocess
+import sys
 
 import bpy
 import typer
 from mathutils import Vector
-from typing_extensions import Annotated
 
 app = typer.Typer(help="Import FBX and create TikTok-style camera automation")
 
@@ -219,9 +222,118 @@ def remove_imported_objects(imported_objects: list[bpy.types.Object]) -> None:
             bpy.data.objects.remove(obj, do_unlink=True)
 
 
+def render_to_mp4(
+    output_path: Path,
+    fps: int = 24,
+    quality: str = "high",
+    frame_start: Optional[int] = None,
+    frame_end: Optional[int] = None,
+) -> Path:
+    """Render animation directly to MP4 file using Blender's FFmpeg.
+    
+    Args:
+        output_path: Path to save the MP4 file
+        fps: Frames per second for the output video
+        quality: Quality preset - 'high', 'medium', or 'low'
+        frame_start: Start frame (defaults to scene start)
+        frame_end: End frame (defaults to scene end)
+    
+    Returns:
+        Path to the rendered MP4 file
+    """
+    scene = bpy.context.scene
+    
+    # Use scene frame range if not specified
+    if frame_start is None:
+        frame_start = scene.frame_start
+    if frame_end is None:
+        frame_end = scene.frame_end
+    
+    # Quality settings mapping (bitrate in kbps)
+    quality_settings = {
+        "high": {"bitrate": 8000, "gop": 12},
+        "medium": {"bitrate": 4000, "gop": 15},
+        "low": {"bitrate": 2000, "gop": 18},
+    }
+    
+    if quality not in quality_settings:
+        typer.secho(f"Warning: Unknown quality '{quality}', using 'medium'", fg=typer.colors.YELLOW)
+        quality = "medium"
+    
+    settings = quality_settings[quality]
+    
+    typer.echo(f"Rendering frames {frame_start} to {frame_end}...")
+    
+    # Store original settings to restore later
+    original_format = scene.render.image_settings.file_format
+    original_filepath = scene.render.filepath
+    original_start = scene.frame_start
+    original_end = scene.frame_end
+    
+    try:
+        # Configure FFmpeg output
+        scene.render.image_settings.file_format = 'FFMPEG'
+        scene.render.ffmpeg.format = 'MPEG4'
+        scene.render.ffmpeg.codec = 'H264'
+        
+        # Quality settings
+        scene.render.ffmpeg.constant_rate_factor = 'HIGH' if quality == 'high' else 'MEDIUM' if quality == 'medium' else 'LOW'
+        scene.render.ffmpeg.ffmpeg_preset = 'GOOD'
+        scene.render.ffmpeg.video_bitrate = settings["bitrate"]
+        scene.render.ffmpeg.gopsize = settings["gop"]
+        
+        # Audio settings (disable if not needed)
+        scene.render.ffmpeg.audio_codec = 'AAC'
+        scene.render.ffmpeg.audio_bitrate = 192
+        
+        # Frame rate
+        scene.render.fps = fps
+        scene.render.fps_base = 1.0
+        
+        # Set output path and frame range
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        scene.render.filepath = str(output_path)
+        scene.frame_start = frame_start
+        scene.frame_end = frame_end
+        
+        # Render animation
+        typer.echo(f"Encoding to MP4 with quality={quality} (bitrate={settings['bitrate']}kbps)...")
+        
+        with typer.progressbar(
+            length=frame_end - frame_start + 1,
+            label="Rendering frames"
+        ) as progress:
+            bpy.ops.render.render(animation=True, write_still=False)
+            progress.update(frame_end - frame_start + 1)
+        
+        typer.secho(f"✓ MP4 rendered successfully: {output_path}", fg=typer.colors.GREEN)
+        
+        # Get file size
+        if output_path.exists():
+            file_size_mb = output_path.stat().st_size / (1024 * 1024)
+            typer.echo(f"  File size: {file_size_mb:.2f} MB")
+            typer.echo(f"  Resolution: {scene.render.resolution_x}x{scene.render.resolution_y}")
+            typer.echo(f"  Frame rate: {fps} fps")
+            typer.echo(f"  Duration: {(frame_end - frame_start + 1) / fps:.2f} seconds")
+        else:
+            typer.secho(f"Warning: Output file not found at {output_path}", fg=typer.colors.YELLOW)
+        
+    except Exception as e:
+        typer.secho(f"Error during rendering: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    finally:
+        # Restore original settings
+        scene.render.image_settings.file_format = original_format
+        scene.render.filepath = original_filepath
+        scene.frame_start = original_start
+        scene.frame_end = original_end
+    
+    return output_path
+
+
 @app.command()
 def test_import(
-    fbx_file: Annotated[Path, typer.Argument(help="Path to the FBX file to test")],
+    fbx_file: Path = typer.Argument(..., help="Path to the FBX file to test"),
 ) -> None:
     """Test importing an FBX file and report what's found.
     
@@ -277,12 +389,9 @@ def test_import(
 
 @app.command()
 def test_template(
-    blend_file: Annotated[Path, typer.Argument(help="Path to the blend file template")],
-    fbx_file: Annotated[Path, typer.Argument(help="Path to the FBX file to import")],
-    output: Annotated[
-        Optional[Path],
-        typer.Option("--output", "-o", help="Output .blend file path"),
-    ] = None,
+    blend_file: Path = typer.Argument(..., help="Path to the blend file template"),
+    fbx_file: Path = typer.Argument(..., help="Path to the FBX file to import"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output .blend file path"),
 ) -> None:
     """Test loading a blend file template and importing an FBX into it.
     
@@ -335,24 +444,12 @@ def test_template(
 
 @app.command()
 def create(
-    fbx_file: Annotated[Path, typer.Argument(help="Path to the FBX file to import")],
-    output: Annotated[
-        Optional[Path],
-        typer.Option("--output", "-o", help="Output .blend file path"),
-    ] = None,
-    bone: Annotated[
-        str,
-        typer.Option("--bone", "-b", help="Target bone name for camera tracking"),
-    ] = TARGET_BONE_NAME,
-    start_frame: Annotated[
-        int, typer.Option("--start", "-s", help="Animation start frame")
-    ] = 1,
-    end_frame: Annotated[
-        Optional[int], typer.Option("--end", "-e", help="Animation end frame (defaults to last frame of armature animation)")
-    ] = None,
-    no_lights: Annotated[
-        bool, typer.Option("--no-lights", help="Skip adding studio lights")
-    ] = False,
+    fbx_file: Path = typer.Argument(..., help="Path to the FBX file to import"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output .blend file path"),
+    bone: str = typer.Option(TARGET_BONE_NAME, "--bone", "-b", help="Target bone name for camera tracking"),
+    start_frame: int = typer.Option(1, "--start", "-s", help="Animation start frame"),
+    end_frame: Optional[int] = typer.Option(None, "--end", "-e", help="Animation end frame (defaults to last frame of armature animation)"),
+    no_lights: bool = typer.Option(False, "--no-lights", help="Skip adding studio lights"),
 ) -> None:
     """Import an FBX file and create a TikTok-style camera that follows the animation.
 
@@ -436,6 +533,56 @@ def create(
     if target_bone:
         typer.echo(f"Tracking bone: {target_bone}")
     typer.echo(f"Frame range: {start_frame} - {end_frame}")
+
+
+@app.command()
+def render(
+    blend_file: Path = typer.Argument(..., help="Path to the blend file to render"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output MP4 file path"),
+    fps: int = typer.Option(24, "--fps", help="Frames per second for output video"),
+    quality: str = typer.Option("high", "--quality", "-q", help="Quality preset: high, medium, or low"),
+    frame_start: Optional[int] = typer.Option(None, "--start", "-s", help="Start frame (defaults to scene start)"),
+    frame_end: Optional[int] = typer.Option(None, "--end", "-e", help="End frame (defaults to scene end)"),
+) -> None:
+    """Render a blend file animation to MP4.
+    
+    This command loads a blend file and renders the animation directly
+    to MP4 using Blender's built-in FFmpeg encoder.
+    
+    Examples:
+        python project2_ex1_fbx_tiktok_renderer.py render scene.blend
+        python project2_ex1_fbx_tiktok_renderer.py render scene.blend -o output.mp4
+        python project2_ex1_fbx_tiktok_renderer.py render scene.blend -q medium --fps 30
+        python project2_ex1_fbx_tiktok_renderer.py render scene.blend --start 1 --end 100
+    """
+    typer.secho("🎬 Rendering Animation to MP4", fg=typer.colors.CYAN, bold=True)
+    typer.echo("=" * 50)
+    
+    # Default output path
+    if output is None:
+        output = blend_file.with_suffix(".mp4")
+    
+    # Load the blend file
+    typer.echo(f"Loading blend file: {blend_file}")
+    load_blend_file(blend_file)
+    
+    # Verify we have a camera
+    if bpy.context.scene.camera is None:
+        typer.secho("Error: Scene has no active camera!", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    
+    # Render to MP4
+    typer.echo(f"\nOutput file: {output}")
+    render_to_mp4(
+        output_path=output,
+        fps=fps,
+        quality=quality,
+        frame_start=frame_start,
+        frame_end=frame_end,
+    )
+    
+    typer.echo("=" * 50)
+    typer.secho("✨ Render complete!", fg=typer.colors.GREEN, bold=True)
 
 
 if __name__ == "__main__":
