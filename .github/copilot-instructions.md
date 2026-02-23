@@ -7,7 +7,7 @@ This is a Blender Technical Direction course repository. Scripts automate Blende
 ## Environment
 
 - Python **3.11.9** with a local `.venv/` virtual environment
-- `bpy` is installed in `.venv/` — always use the project venv, never system Python
+- `bpy` is installed in `.venv/` — always activate the project venv, never system Python
 - CLI tooling is built with **Typer** (`typer` is in `requirements.txt`)
 - **Do NOT use headless Blender** (`blender --background --python ...`). Scripts are executed directly via the venv: `.venv/bin/python script.py`
 - Install dependencies with: `pip install -r requirements.txt`
