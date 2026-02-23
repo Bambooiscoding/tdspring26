@@ -21,6 +21,7 @@ Week 1 introduces students to Blender automation fundamentals and how Technical 
 ## Prerequisites
 - Blender 4.x installed locally.
 - Python 3.10+ environment with `bpy` available (the class virtual environment supplies this when running headless).
+- [Node.js](https://nodejs.org/) (LTS recommended) — required for the Context7 MCP server (`npx` must be available on your PATH).
 - Launch Blender once and set default unit scale to Metric for consistent results.
 
 ## Exercise 1 — Scene Bootstrap + Cube Animation (`week1_ex1_scene_basics.py`)
