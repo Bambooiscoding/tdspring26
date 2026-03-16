@@ -1,0 +1,39 @@
+Project Manifest — Procedural Remix Pipeline (Project 2)
+
+1) Source Preparation (Completed)
+- Built a synchronized source set of 20 renders from a 4-character × 5-scene matrix.
+- Naming convention: <scene>_<character>.mp4.
+- Used common-overlap synchronization for compositing (shortest shared frame range) to keep all source frame indices aligned.
+
+2) Scene + Character Matrix Model (Final Editing Paradigm)
+- Characters (4): doozy-hiphop, michelle-hiphop, mouse-hiphop, vegas-hiphop.
+- Scenes (5): David_Bust_point_cloud, Hydrant_vertical_point_cloud, Mailbox_point_cloud, McLaren_point_cloud, Panzernashorn_Tobler_point_cloud.
+- Matrix coverage model: each remix shot references one cell from the 5×4 scene/character grid.
+
+3) Alternating Weaving Logic (Core Rule)
+- Switch parity rule:
+	- Odd-numbered switches: advance scene, keep character.
+	- Even-numbered switches: advance character, keep scene.
+- Both loops are cyclic:
+	- Scene loop wraps over 5 scenes in fixed order.
+	- Character loop wraps over 4 characters in fixed order.
+- State is continuous across section boundaries (no reset between sections).
+
+4) Opening State + Loop Constraint (Final System)
+- Procedural opening is parameterized; exported versions used:
+	- McLaren_point_cloud_vegas-hiphop (primary looped export).
+	- McLaren_point_cloud_mouse-hiphop (alternate export variant).
+- Loop-ending constraint:
+	- Final segment must return to scene McLaren_point_cloud.
+	- Final character must differ from the opening character.
+- Purpose: preserve scene continuity at loop point while avoiding duplicated character at wrap.
+
+5) Section Timing Structures Used in Final Exports
+- Base looped structure: 1.2s, 0.8s, 0.5s, then 6 frames.
+- Timing-variant export structure: 0.25s, 0.5s, 0.8s, 1.2s.
+- Resolution/FPS policy: preserve source FPS and frame size in all final composites.
+
+6) Deliverable Outcome
+- Final procedural editor implemented in `exercises/project2/woven_remix.py`.
+- Outputs managed under `hw2/renders/finals/` (including final submission organization).
+
